@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tides">
+<meta name="theme-color" content="#0A0E13">
+<meta name="description" content="High and low tide times for Port Royal, Virginia.">
+<title>Tides</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<style>
+  /* Single-theme by design: this app is read at dawn and dusk on the water,
+     and it inherits the dark visual language of the Bass Hub tide widget.
+     Every colour is painted explicitly so it never borrows a host ground. */
+  :root {
+    color-scheme: dark;
+
+    --ground:    #0A0E13;
+    --surface:   #151B23;
+    --surface-2: #1D242E;
+    --border:    #2B3543;
+    --border-sf: #232C38;
+
+    --text:      #EAF0F6;
+    --muted:     #93A4B5;
+    --dim:       #5E6E7E;
+    --faint:     #3E4B59;
+
+    --low:       #4D9BE6;
+    --low-bg:    rgba(77,155,230,.12);
+    --low-br:    rgba(77,155,230,.38);
+
+    --high:      #35D6C4;
+    --high-bg:   rgba(53,214,196,.12);
+    --high-br:   rgba(53,214,196,.38);
+
+    --next-br:   rgba(234,240,246,.22);
+    --next-bg:   #1F2833;
+
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+
+    --pad: 20px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    background: var(--ground);
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    color: var(--text);
+    font-family: var(--ui);
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .app {
+    max-width: 560px;
+    margin: 0 auto;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 14px)
+      calc(env(safe-area-inset-right, 0px) + var(--pad))
+      calc(env(safe-area-inset-bottom, 0px) + 28px)
+      calc(env(safe-area-inset-left, 0px) + var(--pad));
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* ---------- header ---------- */
+
+  header { display: flex; flex-direction: column; gap: 10px; }
+
+  .toprow { display: flex; align-items: center; gap: 10px; min-height: 24px; }
+
+  /* The date gets the full width — an iOS large title, not a squeezed label. */
+  .date-wrap { position: relative; width: 100%; }
+
+  .date-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    background: none;
+    border: 0;
+    padding: 2px 0;
+    margin: 0;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 44px;        /* iOS minimum tap target — the date is a control */
+    gap: 1px;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: opacity .12s ease;
+  }
+  .date-wrap:active .date-btn { opacity: .55; }
+
+  .weekday {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .bigdate {
+    /* Fluid so the longest date — "September 30, 2026" — still fits on one
+       line on a 320px phone without shrinking the title on a large one. */
+    font-size: clamp(21px, 6.9vw, 30px);
+    font-weight: 700;
+    letter-spacing: -.022em;
+    line-height: 1.12;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+  }
+  .bigdate .caret {
+    width: 9px; height: 9px; flex: none;
+    border-right: 2.5px solid var(--dim);
+    border-bottom: 2.5px solid var(--dim);
+    transform: translateY(-3px) rotate(45deg);
+    border-radius: 1px;
+  }
+
+  .botrow { display: flex; align-items: center; gap: 10px; }
+  .botrow .station { flex: 1; min-width: 0; }
+  .steps { display: flex; gap: 8px; flex: none; }
+
+  /* The real control. Transparent, on top, sized to the date — tapping it
+     opens the genuine iOS wheel picker rather than anything hand-built. */
+  .date-input {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    opacity: 0;
+    border: 0; padding: 0; margin: 0;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    font-size: 16px; /* prevents zoom-on-focus */
+  }
+  .date-input:focus-visible + .date-btn { outline: 2px solid var(--low); outline-offset: 4px; border-radius: 4px; }
+
+  .step {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background .12s ease, opacity .12s ease;
+  }
+  .step:active { background: var(--surface-2); }
+  .step:disabled { opacity: .3; cursor: default; }
+  .step svg { width: 15px; height: 15px; display: block; }
+
+  .station {
+    font-size: 13.5px;
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .today-btn {
+    appearance: none; -webkit-appearance: none;
+    margin-left: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    cursor: pointer;
+  }
+  .today-btn:active { background: var(--surface-2); }
+  .today-btn[hidden] { display: none; }
+
+  /* ---------- tide rows ---------- */
+
+  .tides { display: flex; flex-direction: column; gap: 9px; }
+
+  .tide {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border-sf);
+    border-radius: 15px;
+    transition: opacity .2s ease;
+  }
+
+  .tide.past { opacity: .38; }
+
+  .tide.next {
+    background: var(--next-bg);
+    border-color: var(--next-br);
+    grid-template-areas:
+      "badge time height"
+      "note  note note";
+  }
+  .tide.next .badge  { grid-area: badge; }
+  .tide.next .time   { grid-area: time; }
+  .tide.next .height { grid-area: height; }
+
+  .badge {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    padding: 5px 9px;
+    border-radius: 7px;
+    border: 1px solid;
+    min-width: 56px;
+    text-align: center;
+  }
+  .badge.L { color: var(--low);  background: var(--low-bg);  border-color: var(--low-br); }
+  .badge.H { color: var(--high); background: var(--high-bg); border-color: var(--high-br); }
+
+  .time {
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -.015em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .height {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .note {
+    grid-area: note;
+    margin-top: 2px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- states ---------- */
+
+  .msg {
+    background: var(--surface);
+    border: 1px solid var(--border-sf);
+    border-radius: 15px;
+    padding: 22px 18px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .msg strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 5px; }
+
+  footer {
+    margin-top: auto;          /* settle at the bottom rather than floating mid-screen */
+    padding-top: 16px;
+    font-size: 11.5px;
+    color: var(--faint);
+    text-align: center;
+    line-height: 1.7;
+    white-space: pre-line;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="toprow">
+      <span class="weekday" id="weekday">&nbsp;</span>
+      <button class="today-btn" id="todayBtn" type="button" hidden>Today</button>
+    </div>
+
+    <div class="date-wrap">
+      <button class="date-btn" id="dateBtn" type="button" aria-label="Change date">
+        <span class="bigdate"><span id="bigdate">&nbsp;</span><span class="caret" aria-hidden="true"></span></span>
+      </button>
+      <input class="date-input" type="date" id="dateInput" aria-label="Pick a date">
+    </div>
+
+    <div class="botrow">
+      <span class="station">Port Royal, VA &middot; Station 8635299</span>
+      <span class="steps">
+        <button class="step" id="prev" type="button" aria-label="Previous day">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2 4.5 8l6 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="step" id="next" type="button" aria-label="Next day">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m5.5 2 6 6-6 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </span>
+    </div>
+  </header>
+
+  <main class="tides" id="tides" aria-live="polite"></main>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TZ = "America/New_York";       // Port Royal's local time — not the viewer's
+  var DAY_MS = 86400000;
+  var DATA = null;
+
+  // ---------- date helpers (all arithmetic in UTC to dodge local-tz drift) ----
+
+  function parseISO(s) {
+    var p = s.split("-");
+    return Date.UTC(+p[0], +p[1] - 1, +p[2]);
+  }
+  function toISO(ms) {
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  function addDays(iso, n) {
+    return toISO(parseISO(iso) + n * DAY_MS);
+  }
+  function dayIndex(iso) {
+    return Math.round((parseISO(iso) - parseISO(DATA.start)) / DAY_MS);
+  }
+
+  // "Now" at the station, not wherever the phone happens to be.
+  var nowFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  });
+
+  function stationNow() {
+    var parts = nowFmt.formatToParts(new Date());
+    var g = {};
+    for (var i = 0; i < parts.length; i++) g[parts[i].type] = parts[i].value;
+    var hh = +g.hour;
+    if (hh === 24) hh = 0;                       // some engines emit 24 for midnight
+    return { date: g.year + "-" + g.month + "-" + g.day, minutes: hh * 60 + (+g.minute) };
+  }
+
+  // ---------- formatting ----------
+
+  var MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+  var WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+  function weekdayOf(iso) { return WEEKDAYS[new Date(parseISO(iso)).getUTCDay()]; }
+
+  function longDate(iso) {
+    var d = new Date(parseISO(iso));
+    return MONTHS[d.getUTCMonth()] + " " + d.getUTCDate() + ", " + d.getUTCFullYear();
+  }
+
+  function clockOf(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60;
+    var mer = h >= 12 ? "PM" : "AM";
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return (h12 < 10 ? "0" : "") + h12 + ":" + (m < 10 ? "0" : "") + m + " " + mer;
+  }
+
+  // Heights are stored in thousandths — NOAA's exact published precision — and
+  // rounded to a tenth exactly ONCE, here. Rounding twice (0.345 -> 0.35 ->
+  // 0.4) disagrees with NOAA's own 0.3, so intermediate rounding is a bug.
+  // Then normalise -0 away: -0.04 ft must read "0.0 ft", never "-0.0 ft".
+  function feetOf(thousandths) {
+    var tenths = Math.round(thousandths / 100);
+    var v = tenths === 0 ? 0 : tenths / 10;
+    return v.toFixed(1) + " ft";
+  }
+
+  function durationOf(mins) {
+    if (mins < 1) return "in under a minute";
+    var h = Math.floor(mins / 60), m = mins % 60;
+    if (h === 0) return "in " + m + "m";
+    if (m === 0) return "in " + h + "h";
+    return "in " + h + "h " + m + "m";
+  }
+
+  // ---------- data access ----------
+
+  function tidesFor(iso) {
+    var i = dayIndex(iso);
+    if (i < 0 || i >= DATA.days.length) return null;
+    var enc = DATA.days[i];
+    if (!enc) return [];
+    return enc.split(",").map(function (tok) {
+      var type = tok.charAt(0);
+      var rest = tok.slice(1).split(":");
+      return { type: type, mins: +rest[0], hund: +rest[1] };
+    });
+  }
+
+  function inRange(iso) {
+    return parseISO(iso) >= parseISO(DATA.start) && parseISO(iso) <= parseISO(DATA.end);
+  }
+
+  // ---------- state ----------
+
+  var viewDate = null;
+  var tickTimer = null;
+
+  var el = {
+    weekday: document.getElementById("weekday"),
+    bigdate: document.getElementById("bigdate"),
+    input:   document.getElementById("dateInput"),
+    btn:     document.getElementById("dateBtn"),
+    prev:    document.getElementById("prev"),
+    next:    document.getElementById("next"),
+    today:   document.getElementById("todayBtn"),
+    tides:   document.getElementById("tides"),
+    foot:    document.getElementById("foot")
+  };
+
+  function setDate(iso) {
+    if (!inRange(iso)) return;
+    viewDate = iso;
+    el.input.value = iso;
+    render();
+  }
+
+  // ---------- render ----------
+
+  function render() {
+    var now = stationNow();
+    var isToday = viewDate === now.date;
+
+    el.weekday.textContent = isToday ? "Today · " + weekdayOf(viewDate) : weekdayOf(viewDate);
+    el.bigdate.textContent = longDate(viewDate);
+    el.today.hidden = isToday;
+
+    el.prev.disabled = !inRange(addDays(viewDate, -1));
+    el.next.disabled = !inRange(addDays(viewDate, 1));
+
+    var list = tidesFor(viewDate);
+    el.tides.innerHTML = "";
+
+    if (list === null || list.length === 0) {
+      el.tides.appendChild(message(
+        "No predictions for this day",
+        "This app carries NOAA predictions from " + longDate(DATA.start) +
+        " through " + longDate(DATA.end) + "."
+      ));
+      renderFoot();
+      return;
+    }
+
+    // Which row is next, and how far off? Only meaningful when viewing today.
+    var nextIdx = -1, nextMins = 0, nextIsTomorrow = false;
+    if (isToday) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].mins > now.minutes) { nextIdx = i; nextMins = list[i].mins - now.minutes; break; }
+      }
+      if (nextIdx === -1) {
+        // Every tide today has passed. Roll to tomorrow's first, if we have it.
+        var tomorrow = tidesFor(addDays(viewDate, 1));
+        if (tomorrow && tomorrow.length) {
+          nextIsTomorrow = true;
+          nextMins = (1440 - now.minutes) + tomorrow[0].mins;
+          el.tides.appendChild(tideRow(tomorrow[0], false, true, nextMins, true));
+        }
+      }
+    }
+
+    for (var j = 0; j < list.length; j++) {
+      var past = isToday && list[j].mins <= now.minutes;
+      var isNext = j === nextIdx;
+      el.tides.appendChild(tideRow(list[j], past, isNext, isNext ? nextMins : 0, false));
+    }
+
+    if (nextIsTomorrow) {
+      // Move the borrowed row to the end — it belongs after today's tides.
+      el.tides.appendChild(el.tides.firstChild);
+    }
+
+    renderFoot();
+  }
+
+  function tideRow(t, past, isNext, mins, tomorrow) {
+    var row = document.createElement("div");
+    row.className = "tide" + (past ? " past" : "") + (isNext ? " next" : "");
+
+    var badge = document.createElement("span");
+    badge.className = "badge " + t.type;
+    badge.textContent = t.type === "H" ? "HIGH" : "LOW";
+
+    var time = document.createElement("span");
+    time.className = "time";
+    time.textContent = clockOf(t.mins);
+
+    var height = document.createElement("span");
+    height.className = "height";
+    height.textContent = feetOf(t.hund);
+
+    row.appendChild(badge);
+    row.appendChild(time);
+    row.appendChild(height);
+
+    if (isNext) {
+      var note = document.createElement("span");
+      note.className = "note";
+      note.textContent = (tomorrow ? "Tomorrow · " : "Next · ") + durationOf(mins);
+      row.appendChild(note);
+    }
+    return row;
+  }
+
+  function message(title, body) {
+    var d = document.createElement("div");
+    d.className = "msg";
+    var s = document.createElement("strong");
+    s.textContent = title;
+    d.appendChild(s);
+    d.appendChild(document.createTextNode(body));
+    return d;
+  }
+
+  function renderFoot() {
+    el.foot.textContent =
+      "NOAA CO-OPS predictions · heights above MLLW\n" +
+      "Station local time · data through " + longDate(DATA.end);
+  }
+
+  // Re-render on the minute so the countdown stays honest and rows flip to
+  // past as tides go by. Also catches midnight rolling the date over.
+  function startTicking() {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(function () {
+      if (viewDate === stationNow().date || el.today.hidden) render();
+    }, 20000);
+  }
+
+  // ---------- events ----------
+
+  el.input.addEventListener("change", function () {
+    if (el.input.value) setDate(el.input.value);
+  });
+
+  // Safari on iOS opens the wheel on tap of the input itself; showPicker()
+  // covers browsers that need an explicit call.
+  el.btn.addEventListener("click", function () {
+    if (typeof el.input.showPicker === "function") {
+      try { el.input.showPicker(); } catch (e) { /* gesture rules vary; the overlay still works */ }
+    }
+  });
+
+  el.prev.addEventListener("click", function () { setDate(addDays(viewDate, -1)); });
+  el.next.addEventListener("click", function () { setDate(addDays(viewDate, 1)); });
+  el.today.addEventListener("click", function () {
+    var t = stationNow().date;
+    setDate(inRange(t) ? t : DATA.start);
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) render();
+  });
+
+  // ---------- boot ----------
+
+  fetch("data/tides.json", { cache: "no-cache" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (json) {
+      DATA = json;
+      el.input.min = DATA.start;
+      el.input.max = DATA.end;
+
+      var today = stationNow().date;
+      setDate(inRange(today) ? today : (parseISO(today) < parseISO(DATA.start) ? DATA.start : DATA.end));
+      startTicking();
+    })
+    .catch(function (err) {
+      document.getElementById("tides").appendChild(
+        message("Couldn't load tide data", "The prediction file didn't load. " + err.message)
+      );
+    });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* offline is a bonus, not a requirement */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>

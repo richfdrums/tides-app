@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Tides">
+  <defs>
+    <linearGradient id="crest" x1="96" y1="150" x2="416" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D9BE6"/>
+      <stop offset="1" stop-color="#35D6C4"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="96" y1="240" x2="416" y2="310" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D9BE6" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#35D6C4" stop-opacity=".72"/>
+    </linearGradient>
+    <linearGradient id="deep" x1="96" y1="330" x2="416" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D9BE6" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#35D6C4" stop-opacity=".38"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="#0A0E13"/>
+
+  <!-- three swells, rising amplitude toward the crest: the tide coming in -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M84 190 C 141 132, 199 132, 256 190 S 371 248, 428 190"
+          stroke="url(#crest)" stroke-width="30"/>
+    <path d="M84 288 C 141 238, 199 238, 256 288 S 371 338, 428 288"
+          stroke="url(#mid)" stroke-width="26"/>
+    <path d="M84 378 C 141 340, 199 340, 256 378 S 371 416, 428 378"
+          stroke="url(#deep)" stroke-width="22"/>
+  </g>
+</svg>
