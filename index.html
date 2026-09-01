@@ -180,10 +180,28 @@
 
   .station {
     font-size: 13.5px;
-    color: var(--dim);
+    /* A step brighter than the footer text: this one is tappable, and the pin
+       alone is a thin signal on a dark ground. */
+    color: #7C8D9E;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;          /* it's a link now, so it needs a real tap target */
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: color .12s ease;
+  }
+  .station:active { color: var(--muted); }
+  @media (hover: hover) { .station:hover { color: var(--muted); } }
+  .station:focus-visible { outline: 2px solid var(--low); outline-offset: 3px; border-radius: 6px; }
+  .station .label { overflow: hidden; text-overflow: ellipsis; }
+  .station .pin {
+    width: 11px; height: 13px; flex: none;
+    fill: currentColor;
+    opacity: .85;
   }
 
   .today-btn {
@@ -315,7 +333,10 @@
     </div>
 
     <div class="botrow">
-      <span class="station">Port Royal, VA &middot; Station 8635299</span>
+      <a class="station" id="stationLink" target="_blank" rel="noopener noreferrer">
+        <svg class="pin" viewBox="0 0 12 14" aria-hidden="true"><path d="M6 0a5 5 0 0 0-5 5c0 3.6 4.3 8.4 4.5 8.6a.7.7 0 0 0 1 0C6.7 13.4 11 8.6 11 5a5 5 0 0 0-5-5Zm0 6.9A1.9 1.9 0 1 1 6 3a1.9 1.9 0 0 1 0 3.9Z"/></svg>
+        <span class="label" id="stationText">&nbsp;</span>
+      </a>
       <span class="steps">
         <button class="step" id="prev" type="button" aria-label="Previous day">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2 4.5 8l6 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -441,8 +462,23 @@
     next:    document.getElementById("next"),
     today:   document.getElementById("todayBtn"),
     tides:   document.getElementById("tides"),
-    foot:    document.getElementById("foot")
+    foot:    document.getElementById("foot"),
+    station: document.getElementById("stationLink"),
+    stationText: document.getElementById("stationText")
   };
+
+  // Station line, built from the data rather than hardcoded, and linked to the
+  // station's position on Google Maps. The Maps URL API takes bare coordinates
+  // and opens the native app on a phone.
+  function renderStation() {
+    var label = DATA.name + (DATA.state ? ", " + DATA.state : "") +
+                " · Station " + DATA.station;
+    el.stationText.textContent = label;
+    el.station.href = "https://www.google.com/maps/search/?api=1&query=" +
+                      encodeURIComponent(DATA.lat + "," + DATA.lon);
+    el.station.setAttribute("aria-label", "Show " + DATA.name + " on Google Maps");
+    el.station.title = DATA.lat + ", " + DATA.lon;
+  }
 
   function setDate(iso) {
     if (!inRange(iso)) return;
@@ -568,12 +604,30 @@
     if (el.input.value) setDate(el.input.value);
   });
 
-  // Safari on iOS opens the wheel on tap of the input itself; showPicker()
-  // covers browsers that need an explicit call.
-  el.btn.addEventListener("click", function () {
-    if (typeof el.input.showPicker === "function") {
-      try { el.input.showPicker(); } catch (e) { /* gesture rules vary; the overlay still works */ }
+  // Opening the picker is browser-dependent, and the difference is not cosmetic:
+  // Safari (iOS and macOS) opens the picker when the field itself is tapped, but
+  // Chrome and Firefox only open it from the little calendar icon — which is
+  // hidden here — or from an explicit showPicker() call. The transparent input
+  // sits above the button and swallows the click, so the handler has to live on
+  // the input, not the button underneath it.
+  function openPicker(e) {
+    if (typeof el.input.showPicker !== "function") return;   // old Safari: native tap still works
+    try {
+      // Deliberately NOT preventing the default: on Safari the native tap
+      // behaviour is what already works, and suppressing it to avoid a
+      // theoretical double-open would risk breaking the platform this app
+      // is actually used on. Opening the same picker twice is harmless.
+      el.input.showPicker();
+    } catch (err) {
+      /* Not a user gesture, or the browser refused. The native tap behaviour
+         remains as the fallback, so there is nothing to recover from here. */
     }
+  }
+
+  el.input.addEventListener("click", openPicker);
+  el.btn.addEventListener("click", openPicker);
+  el.input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { openPicker(e); }
   });
 
   el.prev.addEventListener("click", function () { setDate(addDays(viewDate, -1)); });
@@ -598,6 +652,7 @@
       DATA = json;
       el.input.min = DATA.start;
       el.input.max = DATA.end;
+      renderStation();
 
       var today = stationNow().date;
       setDate(inRange(today) ? today : (parseISO(today) < parseISO(DATA.start) ? DATA.start : DATA.end));

@@ -260,7 +260,78 @@ async function rows(page) {
       await ctx.close();
     }
 
-    // ---- 10. Opened from disk: explain, don't just fail -------------------
+    // ---- 10. Date picker opens where Chrome needs an explicit call --------
+    // Chrome and Firefox only open a date picker from its calendar icon (hidden
+    // here) or from showPicker(). Safari opens it on a tap of the field. The
+    // transparent input sits above the button and swallows the click, so the
+    // handler must be on the input. Stub showPicker so headless doesn't try to
+    // render a real picker, and assert it actually gets invoked.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, timezoneId: "America/New_York" });
+      const page = await ctx.newPage();
+      await page.addInitScript(() => {
+        window.__pickerCalls = 0;
+        Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+          configurable: true, writable: true,
+          value: function () { window.__pickerCalls++; }
+        });
+      });
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+      await page.waitForSelector(".tide");
+
+      await page.click(".date-wrap");          // clicks whatever is topmost — the input
+      const afterHeading = await page.evaluate(() => window.__pickerCalls);
+      check("clicking the date heading opens the picker", afterHeading >= 1,
+            `showPicker called ${afterHeading}x`);
+
+      const receiver = await page.evaluate(() => {
+        const r = document.querySelector(".date-wrap").getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return el.id || el.tagName;
+      });
+      check("the input is the element receiving the click", receiver === "dateInput", receiver);
+      await ctx.close();
+    }
+
+    // Separately confirm the API this fix depends on actually exists unstubbed
+    // in a Chromium-family browser — otherwise the test above only proves the
+    // stub was reachable.
+    {
+      const { ctx, page } = await boot(browser, "2026-08-31T18:15:00Z");
+      const native = await page.evaluate(() =>
+        typeof document.getElementById("dateInput").showPicker === "function");
+      check("showPicker exists natively in Chromium", native, String(native));
+      await ctx.close();
+    }
+
+    // ---- 11. Station links to the station's position on Google Maps -------
+    {
+      const { ctx, page, errors } = await boot(browser, "2026-08-31T18:15:00Z");
+      const a = await page.evaluate(() => {
+        const el = document.getElementById("stationLink");
+        const r = el.getBoundingClientRect();
+        return {
+          href: el.getAttribute("href"),
+          target: el.getAttribute("target"),
+          rel: el.getAttribute("rel"),
+          text: document.getElementById("stationText").textContent,
+          aria: el.getAttribute("aria-label"),
+          h: r.height
+        };
+      });
+      check("station text is built from the data",
+            a.text === "Port Royal, VA · Station 8635299", a.text);
+      check("station links to Google Maps at the station's coordinates",
+            a.href === "https://www.google.com/maps/search/?api=1&query=38.1733%2C-77.19", a.href);
+      check("station link opens safely in a new tab",
+            a.target === "_blank" && /noopener/.test(a.rel || ""), `${a.target} / ${a.rel}`);
+      check("station link has an accessible name", /Google Maps/.test(a.aria || ""), a.aria);
+      check("station link meets the 44pt tap target", a.h >= 44, `${Math.round(a.h)}px`);
+      check("no console errors with the station link", errors.length === 0, errors.join(" | "));
+      await ctx.close();
+    }
+
+    // ---- 12. Opened from disk: explain, don't just fail -------------------
     {
       const ctx = await browser.newContext({ viewport: { width: 393, height: 852 } });
       const page = await ctx.newPage();
