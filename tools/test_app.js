@@ -260,6 +260,18 @@ async function rows(page) {
       await ctx.close();
     }
 
+    // ---- 10. Opened from disk: explain, don't just fail -------------------
+    {
+      const ctx = await browser.newContext({ viewport: { width: 393, height: 852 } });
+      const page = await ctx.newPage();
+      await page.goto("file://" + path.join(ROOT, "index.html"));
+      await page.waitForSelector(".msg", { timeout: 8000 });
+      const text = await page.textContent(".msg");
+      check("file:// shows a useful message, not a bare error",
+            /http\.server|localhost/.test(text), text.slice(0, 90));
+      await ctx.close();
+    }
+
   } finally {
     await browser.close();
     server.close();

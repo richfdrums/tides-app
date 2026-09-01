@@ -604,8 +604,19 @@
       startTicking();
     })
     .catch(function (err) {
+      // Opened straight off disk? Browsers block fetch() from file:// origins, so
+      // the data file can never load that way. Say so plainly instead of
+      // reporting a bare network error the reader can do nothing with.
+      var viaFile = location.protocol === "file:";
       document.getElementById("tides").appendChild(
-        message("Couldn't load tide data", "The prediction file didn't load. " + err.message)
+        viaFile
+          ? message(
+              "Open this over http, not from a file",
+              "Browsers block data files from loading when a page is opened " +
+              "directly off disk. Run \u0022python3 -m http.server 8000\u0022 in this " +
+              "folder, then open http://localhost:8000"
+            )
+          : message("Couldn't load tide data", "The prediction file didn't load. " + err.message)
       );
     });
 

@@ -95,6 +95,20 @@ https://api.tidesandcurrents.noaa.gov/api/prod/datagetter
 Note that NOAA returns errors with **HTTP 200** and an `{"error": {...}}` body, so
 checking the status code alone is not enough.
 
+## Running locally
+
+`fetch()` is blocked on `file://` origins, so opening `index.html` straight off disk
+will always fail to load `data/tides.json` (and service workers won't register).
+Serve it over http instead:
+
+```sh
+cd ~/Code/tides-app
+python3 -m http.server 8000
+```
+
+Then open <http://localhost:8000>. The app detects the `file://` case and says this
+on screen rather than showing a bare network error.
+
 ## Tests
 
 ```sh
