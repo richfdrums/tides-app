@@ -331,7 +331,58 @@ async function rows(page) {
       await ctx.close();
     }
 
-    // ---- 12. Opened from disk: explain, don't just fail -------------------
+    // ---- 12. A deploy reaches a client that already installed the app -----
+    // This is the regression that matters: the first service worker was
+    // cache-first with a fixed cache name, so a shipped change could never
+    // reach a phone that had already installed the app. Install the worker,
+    // change the file on disk the way a deploy would, reload, and demand to
+    // see the new build.
+    {
+      const indexPath = path.join(ROOT, "index.html");
+      const original = fs.readFileSync(indexPath, "utf8");
+      const ctx = await browser.newContext({
+        viewport: { width: 393, height: 852 },
+        timezoneId: "America/New_York",
+        serviceWorkers: "allow"
+      });
+      try {
+        const page = await ctx.newPage();
+        await page.addInitScript(freezeClock("2026-08-31T18:15:00Z"));
+        await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+        await page.waitForSelector(".tide");
+
+        await page.waitForFunction(() => navigator.serviceWorker.controller !== null,
+                                   null, { timeout: 15000 });
+        check("service worker takes control of the page", true, "");
+
+        const before = await page.textContent("#foot");
+
+        // Simulate a deploy: the build marker changes, as it would on any push.
+        fs.writeFileSync(indexPath,
+          original.replace('var BUILD = "', 'var BUILD = "DEPLOYED-'), "utf8");
+
+        await page.reload({ waitUntil: "networkidle" });
+        await page.waitForSelector(".tide");
+        const after = await page.textContent("#foot");
+
+        check("a deployed change reaches an already-installed client",
+              /DEPLOYED-/.test(after) && after !== before,
+              `before: ${before.split("\n").pop()} | after: ${after.split("\n").pop()}`);
+
+        // And it must still work with the network gone.
+        await ctx.setOffline(true);
+        await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+        await page.waitForSelector(".tide", { timeout: 10000 });
+        const offlineRows = await page.$$eval(".tide", els => els.length);
+        check("still works offline after the change", offlineRows >= 3, `${offlineRows} rows`);
+        await ctx.setOffline(false);
+      } finally {
+        fs.writeFileSync(indexPath, original, "utf8");
+        await ctx.close();
+      }
+    }
+
+    // ---- 13. Opened from disk: explain, don't just fail -------------------
     {
       const ctx = await browser.newContext({ viewport: { width: 393, height: 852 } });
       const page = await ctx.newPage();

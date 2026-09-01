@@ -128,6 +128,52 @@ GitHub Pages, from the repository root. No build step — it is static files.
 git add -A && git commit -m "..." && git push
 ```
 
+Bump `BUILD` in `index.html` when you want to be able to confirm what's live — it
+prints in the footer, so "did my deploy land?" is answered by looking at the app.
+
+## Caching, and why a deploy actually shows up
+
+The first service worker was cache-first for every request with a fixed cache name.
+That combination is a trap: `index.html` was served from cache forever, and the
+`activate` handler that purges old caches never ran, because the cache name never
+changed. A shipped fix could not reach a phone that had already installed the app.
+
+Freshness is no longer anyone's job to remember:
+
+| Request | Strategy | Why |
+|---|---|---|
+| Navigations (`index.html`) | **Network first**, cache fallback | The app is a few KB — the round trip is imperceptible online, and offline still works. This is what makes a deploy show up. |
+| Tide data, icons, manifest | **Stale while revalidate** | Instant from cache, refreshed underneath. Nothing blocks on the network; nothing is stale for more than one load. |
+
+The navigation fetch uses `cache: "no-cache"` to force revalidation against the
+server — GitHub Pages sets a ten-minute `max-age` that would otherwise blunt the
+whole point.
+
+The page side re-checks for a new worker on load and whenever the app returns to the
+foreground, and reloads once a newer worker takes control — guarded so the very first
+install doesn't reload the app in the user's face.
+
+`VERSION` in `sw.js` only needs bumping to force-purge every client's cache: a change
+to this strategy, or bad data shipped by mistake. **Routine deploys do not need it.**
+
+`tools/test_app.js` covers this directly — it installs the worker, changes
+`index.html` the way a deploy would, reloads, and demands to see the new build (then
+checks it still works offline). That test fails against the old cache-first worker,
+which is the point of having it.
+
+### If a client is still stuck
+
+An install that already has the old worker needs to fetch the new `sw.js` once.
+Browsers re-check it on navigation, and GitHub Pages caps its `max-age` at ten
+minutes, so reopening the app a few minutes after a deploy is normally enough. To
+force it:
+
+- **iPhone** — open the site in Safari (not the home-screen icon) and reload, which
+  updates the worker for both. If it is truly wedged: Settings → Safari → Advanced →
+  Website Data → remove the entry, then reopen.
+- **Desktop Chrome** — DevTools → Application → Service Workers → *Unregister*, then
+  hard reload. *Update on reload* in that panel is worth ticking while developing.
+
 ## Why no tide curve
 
 Port Royal is a **subordinate** station (type `S`). NOAA publishes only highs and lows

@@ -357,6 +357,10 @@
 (function () {
   "use strict";
 
+  // Shown in the footer so "did my deploy actually land?" is answerable by
+  // looking at the app, rather than by guessing at caches.
+  var BUILD = "2026-09-01";
+
   var TZ = "America/New_York";       // Port Royal's local time — not the viewer's
   var DAY_MS = 86400000;
   var DATA = null;
@@ -586,7 +590,8 @@
   function renderFoot() {
     el.foot.textContent =
       "NOAA CO-OPS predictions · heights above MLLW\n" +
-      "Station local time · data through " + longDate(DATA.end);
+      "Station local time · data through " + longDate(DATA.end) + "\n" +
+      "Build " + BUILD;
   }
 
   // Re-render on the minute so the countdown stays honest and rows flip to
@@ -675,9 +680,32 @@
       );
     });
 
+  // ---------- service worker ----------
+  // Offline support is a bonus; never let it break the app or pin it to an old
+  // build. The worker is network-first for the page itself, and this side asks
+  // it to re-check whenever the app is opened or brought back to the foreground.
   if ("serviceWorker" in navigator) {
+    // True only if a worker was ALREADY driving this page. Without this guard,
+    // the very first install would fire controllerchange and reload the app the
+    // first time anyone opens it.
+    var hadController = !!navigator.serviceWorker.controller;
+    var reloading = false;
+
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();          // a newer build just took over — show it
+    });
+
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("sw.js").catch(function () { /* offline is a bonus, not a requirement */ });
+      navigator.serviceWorker.register("sw.js").then(function (reg) {
+        reg.update();
+        // Re-check when the app is reopened from the home screen, which is how
+        // it is nearly always launched.
+        document.addEventListener("visibilitychange", function () {
+          if (!document.hidden) { try { reg.update(); } catch (e) {} }
+        });
+      }).catch(function () { /* no offline support; the app still works */ });
     });
   }
 })();
