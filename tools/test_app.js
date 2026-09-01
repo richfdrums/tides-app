@@ -2,10 +2,45 @@
    Serves the site, drives it in an iPhone-sized Chromium with the station's
    timezone, and asserts the behaviours the spec calls out as risky. */
 
-const { chromium } = require("playwright");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+
+let chromium;
+try {
+  ({ chromium } = require("playwright"));
+} catch (e) {
+  console.error(
+    "\nPlaywright isn't installed.\n\n" +
+    "  npm install                      # once, in the repo root\n" +
+    "  npx playwright install chromium  # downloads the browser (~130 MB)\n\n" +
+    "Or do both with:  npm run setup\n" +
+    "Then run the tests with:  npm test\n"
+  );
+  process.exit(1);
+}
+
+/* Prefer Playwright's own pinned Chromium. If the binary was never downloaded,
+   fall back to a locally installed Google Chrome before giving up — that keeps
+   the suite runnable on a machine that has Chrome but not the download. */
+async function launchBrowser() {
+  try {
+    return await chromium.launch();
+  } catch (first) {
+    try {
+      const b = await chromium.launch({ channel: "chrome" });
+      console.log("(using your installed Google Chrome — Playwright's Chromium isn't downloaded)\n");
+      return b;
+    } catch (second) {
+      console.error(
+        "\nNo browser available to test with.\n\n" +
+        "  npx playwright install chromium\n\n" +
+        "Playwright reported: " + first.message.split("\n")[0] + "\n"
+      );
+      process.exit(1);
+    }
+  }
+}
 
 const ROOT = path.resolve(__dirname, "..");
 const PORT = 8731;
@@ -84,7 +119,7 @@ async function rows(page) {
 
 (async () => {
   const server = serve();
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
 
   try {
     // ---- 1. Opens on today, mid-afternoon ---------------------------------

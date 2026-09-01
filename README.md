@@ -32,7 +32,11 @@ icons/                  wave mark, SVG + rasterised PNGs
 tools/
   build_data.py         assembles + verifies data/tides.json
   test_app.js           Playwright verification suite
+package.json            dev-only: Playwright for the tests. The app ships no JS deps.
 ```
+
+Nothing in `package.json` reaches the deployed site — `index.html` is self-contained,
+and GitHub Pages serves these files as-is with no build step.
 
 ## Data format
 
@@ -111,9 +115,20 @@ on screen rather than showing a bare network error.
 
 ## Tests
 
+First time only — installs Playwright and its browser (~130 MB):
+
 ```sh
-node tools/test_app.js
+npm run setup
 ```
+
+Then:
+
+```sh
+npm test
+```
+
+If Playwright's Chromium isn't downloaded but you have Google Chrome installed, the
+suite falls back to it automatically and says so.
 
 Serves the site and drives it in an iPhone-sized Chromium with the station's timezone.
 Covers formatting against known-good values, the 3-tide day, negative heights never

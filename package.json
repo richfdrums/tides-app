@@ -1,0 +1,16 @@
+{
+  "name": "tides-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "High and low tide times for Port Royal, Virginia (NOAA station 8635299), as an installable iPhone web app.",
+  "license": "MIT",
+  "scripts": {
+    "setup": "npm install && npx playwright install chromium",
+    "test": "node tools/test_app.js",
+    "start": "python3 -m http.server 8000",
+    "build-data": "python3 tools/build_data.py"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
