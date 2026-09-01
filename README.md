@@ -6,6 +6,10 @@ installable iPhone web app.
 Opens to today, highlights the next tide with a live countdown, and lets you jump to
 any date through the end of 2030. Works with no signal.
 
+<img width="375" alt="IMG_1930" src="https://github.com/user-attachments/assets/2c4597d3-0742-4111-8856-9e0b9702f7eb" />
+
+<img width="375" alt="IMG_2067" src="https://github.com/user-attachments/assets/00e4b746-a36a-45d2-8d73-99b812799c08" />
+
 ---
 
 ## How it works
