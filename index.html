@@ -42,6 +42,8 @@
     --next-br:   rgba(234,240,246,.22);
     --next-bg:   #1F2833;
 
+    --sun:       #F2B84B;
+
     --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 
     --pad: 20px;
@@ -302,6 +304,35 @@
   }
   .msg strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 5px; }
 
+  /* ---------- sunrise / sunset ---------- */
+
+  .sunrow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;
+    padding: 2px 0;
+  }
+
+  .sun-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .sun-item svg { width: 18px; height: 18px; flex: none; color: var(--sun); }
+  .sun-item .sun-label {
+    color: var(--dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    margin-right: -2px;
+  }
+
   footer {
     margin-top: auto;          /* settle at the bottom rather than floating mid-screen */
     padding-top: 16px;
@@ -350,6 +381,19 @@
 
   <main class="tides" id="tides" aria-live="polite"></main>
 
+  <div class="sunrow" id="sunrow" hidden>
+    <span class="sun-item">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v3M4.2 10.2l1.8 1.4M19.8 10.2 18 11.6M2 16h20M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 16a5 5 0 0 1 10 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 6.5 7.6 4.6M15 6.5l1.4-1.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="sun-label">Sunrise</span>
+      <span id="sunrise">&nbsp;</span>
+    </span>
+    <span class="sun-item">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.2 8.2 6 9.6M19.8 8.2 18 9.6M2 16h20M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 16a5 5 0 0 1 10 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 3v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="sun-label">Sunset</span>
+      <span id="sunset">&nbsp;</span>
+    </span>
+  </div>
+
   <footer id="foot"></footer>
 </div>
 
@@ -359,7 +403,7 @@
 
   // Shown in the footer so "did my deploy actually land?" is answerable by
   // looking at the app, rather than by guessing at caches.
-  var BUILD = "2026-09-01";
+  var BUILD = "2026-09-09";
 
   var TZ = "America/New_York";       // Port Royal's local time — not the viewer's
   var DAY_MS = 86400000;
@@ -434,6 +478,94 @@
     return "in " + h + "h " + m + "m";
   }
 
+  // ---------- sunrise / sunset ----------
+  // Computed, not baked in — sun position is a closed-form formula (unlike
+  // subordinate-station tide predictions, which NOAA only publishes as
+  // discrete hi/lo points), so there's no data file to maintain and no range
+  // limit tied to how far the tide predictions were pulled.
+  //
+  // Classic "Sunrise/Sunset Algorithm" (Almanac for Computers, Nautical
+  // Almanac Office, US Naval Observatory, 1990), as widely reproduced (e.g.
+  // https://edwilliams.org/sunrise_sunset_algorithm.htm). Accurate to
+  // roughly a minute for a fixed, non-polar latitude like Port Royal's.
+
+  function deg2rad(d) { return d * Math.PI / 180; }
+  function rad2deg(r) { return r * 180 / Math.PI; }
+  function norm360(x) { return ((x % 360) + 360) % 360; }
+  function norm24(x)  { return ((x % 24) + 24) % 24; }
+
+  function dayOfYear(iso) {
+    var d = new Date(parseISO(iso));
+    var start = Date.UTC(d.getUTCFullYear(), 0, 1);
+    return Math.round((parseISO(iso) - start) / DAY_MS) + 1;
+  }
+
+  // Local UTC offset (minutes, local = UTC + offset) for a given station
+  // date, derived from how the TZ actually renders that date rather than a
+  // hardcoded DST rule — correct across the spring/fall transitions for
+  // free, the same way the app avoids doing its own DST math elsewhere.
+  function tzOffsetMinutesFor(iso) {
+    var utcNoon = parseISO(iso) + 12 * 60 * 60000;
+    var parts = nowFmt.formatToParts(new Date(utcNoon));
+    var g = {};
+    for (var i = 0; i < parts.length; i++) g[parts[i].type] = parts[i].value;
+    var hh = +g.hour; if (hh === 24) hh = 0;
+    var localMs = Date.UTC(+g.year, +g.month - 1, +g.day, hh, +g.minute);
+    return (localMs - utcNoon) / 60000;
+  }
+
+  function sunUT(N, lon, lat, isRise) {
+    var lngHour = lon / 15;
+    var t = N + ((isRise ? 6 : 18) - lngHour) / 24;
+    var M = (0.9856 * t) - 3.289;
+    var Mrad = deg2rad(M);
+    var L = norm360(M + 1.916 * Math.sin(Mrad) + 0.020 * Math.sin(2 * Mrad) + 282.634);
+    var Lrad = deg2rad(L);
+    var RA = norm360(rad2deg(Math.atan(0.91764 * Math.tan(Lrad))));
+    // RA must land in the same quadrant as L.
+    RA += (Math.floor(L / 90) * 90) - (Math.floor(RA / 90) * 90);
+    RA /= 15;
+
+    var sinDec = 0.39782 * Math.sin(Lrad);
+    var cosDec = Math.cos(Math.asin(sinDec));
+
+    // 90.833deg = 90deg + ~50' atmospheric refraction + the sun's radius,
+    // the standard correction for the geometric horizon.
+    var cosH = (Math.cos(deg2rad(90.833)) - sinDec * Math.sin(deg2rad(lat))) /
+               (cosDec * Math.cos(deg2rad(lat)));
+    if (cosH > 1 || cosH < -1) return null;   // sun never rises/sets — not reachable at this latitude
+
+    var H = (isRise ? 360 - rad2deg(Math.acos(cosH)) : rad2deg(Math.acos(cosH))) / 15;
+    var T = H + RA - (0.06571 * t) - 6.622;
+    return norm24(T - lngHour);               // hours, UTC
+  }
+
+  // Returns { rise, set } as minutes-after-local-midnight, or null values if
+  // the sun doesn't rise/set that day (never happens at this latitude).
+  function sunTimesFor(iso) {
+    var N = dayOfYear(iso);
+    var offset = tzOffsetMinutesFor(iso);
+    function toLocalMins(ut) {
+      if (ut === null) return null;
+      return Math.round(((ut * 60 + offset) % 1440 + 1440) % 1440);
+    }
+    return {
+      rise: toLocalMins(sunUT(N, DATA.lon, DATA.lat, true)),
+      set:  toLocalMins(sunUT(N, DATA.lon, DATA.lat, false))
+    };
+  }
+
+  function renderSun(iso) {
+    var times = sunTimesFor(iso);
+    if (times.rise === null || times.set === null) {
+      el.sunrow.hidden = true;
+      return;
+    }
+    el.sunrow.hidden = false;
+    el.sunrise.textContent = clockOf(times.rise);
+    el.sunset.textContent = clockOf(times.set);
+  }
+
   // ---------- data access ----------
 
   function tidesFor(iso) {
@@ -468,7 +600,10 @@
     tides:   document.getElementById("tides"),
     foot:    document.getElementById("foot"),
     station: document.getElementById("stationLink"),
-    stationText: document.getElementById("stationText")
+    stationText: document.getElementById("stationText"),
+    sunrow:  document.getElementById("sunrow"),
+    sunrise: document.getElementById("sunrise"),
+    sunset:  document.getElementById("sunset")
   };
 
   // Station line, built from the data rather than hardcoded, and linked to the
@@ -503,6 +638,8 @@
 
     el.prev.disabled = !inRange(addDays(viewDate, -1));
     el.next.disabled = !inRange(addDays(viewDate, 1));
+
+    renderSun(viewDate);   // independent of tide data — computed for any date
 
     var list = tidesFor(viewDate);
     el.tides.innerHTML = "";
