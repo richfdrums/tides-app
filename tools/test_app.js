@@ -146,6 +146,16 @@ async function rows(page) {
             /^Next · in 0h?15m|^Next · in 15m/.test(r[2].note || "") || /in \d+m/.test(r[2].note || ""),
             r[2].note);
       check("no console errors on load", errors.length === 0, errors.join(" | "));
+
+      const sunrise = (await page.textContent("#sunrise")).trim();
+      const sunset = (await page.textContent("#sunset")).trim();
+      const sunrowHidden = await page.getAttribute("#sunrow", "hidden");
+      check("sunrow visible", sunrowHidden === null, String(sunrowHidden));
+      check("sunrise time is plausible for 2026-08-31",
+            sunrise === "06:37 AM", sunrise);
+      check("sunset time is plausible for 2026-08-31",
+            sunset === "07:40 PM", sunset);
+
       await page.screenshot({ path: path.join(ROOT, "tools/shot-today.png") });
       await ctx.close();
     }
@@ -177,6 +187,12 @@ async function rows(page) {
       check("2026-09-04 renders exactly 3 tides", r.length === 3, `got ${r.length}`);
       check("no next/past styling on a non-today date",
             !r.some(x => x.next || x.past), "styling leaked");
+
+      const sunrise = (await page.textContent("#sunrise")).trim();
+      const sunset = (await page.textContent("#sunset")).trim();
+      check("sunrise updates when the date changes", sunrise === "06:41 AM", sunrise);
+      check("sunset updates when the date changes", sunset === "07:34 PM", sunset);
+
       await ctx.close();
     }
 
